@@ -1968,6 +1968,7 @@ function getPoolPrices(tokens, prices, pool, chain = "eth") {
 
 async function getPoolInfo(app, chefContract, chefAddress, poolIndex, pendingRewardsFunction, showAll=false) {
   const poolInfo = await chefContract.poolInfo(poolIndex);
+  const poolLp = await chefContract.lpToken(poolIndex);
   if (poolInfo.allocPoint == 0 && !showAll) {
     return {
       address: poolInfo.lpToken,
@@ -1980,7 +1981,7 @@ async function getPoolInfo(app, chefContract, chefAddress, poolIndex, pendingRew
       lastRewardBlock : poolInfo.lastRewardBlock
     };
   }
-  const poolToken = await getToken(app, poolInfo.lpToken ?? poolInfo.stakingToken, chefAddress);
+  const poolToken = await getToken(app, poolInfo.lpToken ?? poolInfo.stakingToken ?? poolLp, chefAddress);
   const userInfo = await chefContract.userInfo(poolIndex, app.YOUR_ADDRESS);
   const pendingRewardTokens = await chefContract.callStatic[pendingRewardsFunction](poolIndex, app.YOUR_ADDRESS);
   const staked = userInfo.amount / 10 ** poolToken.decimals;
@@ -1992,7 +1993,7 @@ async function getPoolInfo(app, chefContract, chefAddress, poolIndex, pendingRew
     userLPStaked = userInfo.stakedLPAmount / 10 ** poolToken.decimals
   }
   return {
-      address: poolInfo.lpToken ?? poolInfo.stakingToken,
+      address: poolInfo.lpToken ?? poolInfo.stakingToken ?? poolLp,
       allocPoints: poolInfo.allocPoint ?? 1,
       poolToken: poolToken,
       userStaked : staked,
@@ -2107,13 +2108,19 @@ async function loadChefContract(App, chef, chefAddress, chefAbi, rewardTokenTick
     / 10 ** rewardToken.decimals * 604800 / 13.5
 
   const poolInfos = await Promise.all([...Array(poolCount).keys()].map(async (x) => {
-    try {
+		try {
       return await getPoolInfo(App, chefContract, chefAddress, x, pendingRewardsFunction, showAll);
     }
     catch (ex) {
       console.log(`Error loading pool ${x}: ${ex}`);
-      return null;
     }
+		try {
+			return await getPool2Info(App, chefContract, chefAddress, x, pendingRewardsFunction, showAll);
+		}
+		catch (ex) {
+			console.log(`Error loading pool ${x}: ${ex}`);
+		}
+
   }));
 
   var tokenAddresses = [].concat.apply([], poolInfos.filter(x => x?.poolToken).map(x => x.poolToken.tokens));
